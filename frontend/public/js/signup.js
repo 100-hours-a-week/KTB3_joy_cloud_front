@@ -1,12 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
- // 요소 조회
+  // 요소 조회
   const form = document.getElementById('signupForm');
   const email = document.getElementById('email');
-  const passwordEl = document.getElementById('password'); // ← 변수명 변경
+  const passwordEl = document.getElementById('password');
   const nickname = document.getElementById('nickname');
-  const image = document.getElementById('image');
+  const image = document.getElementById('profileImage'); // ← 프로필 업로드 input
+  const preview = document.getElementById('profilePreview'); // ← 미리보기 영역
 
-  // 필수 요소 존재 확인 (없으면 콘솔에 원인 표시 후 중단)
   if (!form || !email || !passwordEl || !nickname) {
     console.error('필수 요소를 찾지 못했습니다.', {
       form: !!form, email: !!email, password: !!passwordEl, nickname: !!nickname
@@ -14,95 +14,184 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // 이후 코드에서 password 대신 passwordEl 사용
-  function passwordStrength(pw){
-    let score = 0;
-    if (pw.length >= 8) score += 1;
-    if (/[A-Z]/.test(pw)) score += 1;
-    if (/[0-9]/.test(pw)) score += 1;
-    if (/[^A-Za-z0-9]/.test(pw)) score += 1;
-    return score;
-  }
-
-  const pwBar = document.getElementById('pwBar');
+  // ==== 비밀번호 유효성 검사 ====
+  const passwordConfirm = document.getElementById('passwordConfirm');
   const passwordError = document.getElementById('passwordError');
+  const passwordConfirmError = document.getElementById('passwordConfirmError');
 
-  passwordEl.addEventListener('input', () => {
-    const s = passwordStrength(passwordEl.value);
-    if (pwBar) pwBar.style.width = (s / 4 * 100) + '%';
-    if (passwordError) {
-      passwordError.style.display = (passwordEl.value.length >= 8 ? 'none' : 'block');
+  // 정규식: 8~20자, 대문자/소문자/숫자/특수문자 최소 1개씩
+  const pwRule = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,20}$/;
+
+  passwordEl.addEventListener('blur', () => {
+    const pw = passwordEl.value.trim();
+    const confirmPw = passwordConfirm.value.trim();
+
+    if (!pw) {
+      passwordError.textContent = '*비밀번호를 입력해주세요.';
+      passwordError.style.display = 'block';
+    } else if (!pwRule.test(pw)) {
+      passwordError.textContent = '*비밀번호는 8자 이상, 20자 이하이며, 대문자, 소문자, 숫자, 특수문자를 각각 최소 1개 포함해야 합니다.';
+      passwordError.style.display = 'block';
+    } else {
+      passwordError.style.display = 'none';
+    }
+
+    // 비밀번호 확인 값이 존재할 때 일치 여부도 체크
+    if (confirmPw && pw !== confirmPw) {
+      passwordConfirmError.textContent = '*비밀번호가 다릅니다.';
+      passwordConfirmError.style.display = 'block';
+    } else if (confirmPw && pw === confirmPw) {
+      passwordConfirmError.style.display = 'none';
     }
   });
 
-  // ==== 이메일 검증 ====
-  email.addEventListener('input', () => {
-    const ok = email.checkValidity();
-    emailError.style.display = ok ? 'none' : 'block';
+  passwordConfirm.addEventListener('blur', () => {
+    const pw = passwordEl.value.trim();
+    const confirmPw = passwordConfirm.value.trim();
+
+    if (!confirmPw) {
+      passwordConfirmError.textContent = '*비밀번호를 한번더 입력해주세요.';
+      passwordConfirmError.style.display = 'block';
+    } else if (pw !== confirmPw) {
+      passwordConfirmError.textContent = '*비밀번호가 다릅니다.';
+      passwordConfirmError.style.display = 'block';
+    } else {
+      passwordConfirmError.style.display = 'none';
+    }
   });
 
-  // ==== 닉네임 입력 및 중복 검사 ====
-  nickname.addEventListener('input', async () => {
+  // ==== 닉네임 유효성 검사 ====
+  const nicknameError = document.getElementById('nicknameError');
+  nickname.addEventListener('blur', async () => {
     const value = nickname.value.trim();
 
+    // 1. 입력 안 했을 시
     if (!value) {
+      nicknameError.textContent = '*닉네임을 입력해주세요.';
       nicknameError.style.display = 'block';
-      nickHint.textContent = '닉네임을 입력해주세요.';
-      nickHint.style.color = '#6b7280';
       return;
-    } else {
-      nicknameError.style.display = 'none';
     }
 
-    // 디바운싱 (입력 멈춘 뒤 400ms 후 요청)
-    clearTimeout(nickname._timer);
-    nickname._timer = setTimeout(async () => {
-      try {
-        const resp = await fetch(`/api/v1/auth/check-nickname?nickname=${encodeURIComponent(value)}`);
-        const data = await resp.json();
+    // 2. 띄어쓰기 있을 시
+    if (/\s/.test(value)) {
+      nicknameError.textContent = '*띄어쓰기를 없애주세요.';
+      nicknameError.style.display = 'block';
+      return;
+    }
 
-        if (resp.ok && data.available === true) {
-          nickHint.textContent = '사용 가능한 닉네임입니다.';
-          nickHint.style.color = 'green';
-        } else {
-          nickHint.textContent = data.message || '이미 사용 중인 닉네임입니다.';
-          nickHint.style.color = '#dc2626';
-        }
-      } catch (err) {
-        console.error(err);
-        nickHint.textContent = '닉네임 확인 중 오류가 발생했습니다.';
-        nickHint.style.color = '#dc2626';
+    // 3. 11자 이상일 시
+    if (value.length > 10) {
+      nicknameError.textContent = '*닉네임은 최대 10자 까지 작성 가능합니다.';
+      nicknameError.style.display = 'block';
+      return;
+    }
+
+    // 4. 중복 확인
+    try {
+      const resp = await fetch(`/api/v1/auth/check-nickname?nickname=${encodeURIComponent(value)}`);
+      const data = await resp.json();
+
+      if (resp.ok && data.available === false) {
+        nicknameError.textContent = '*중복된 닉네임 입니다.';
+        nicknameError.style.display = 'block';
+      } else {
+        nicknameError.style.display = 'none';
       }
-    }, 400);
+    } catch (err) {
+      console.error('닉네임 중복 확인 오류:', err);
+      nicknameError.textContent = '*닉네임 확인 중 오류가 발생했습니다.';
+      nicknameError.style.display = 'block';
+    }
   });
 
-  // ==== 이미지 미리보기 ====
-  image.addEventListener('change', (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) {
-      imgPreview.style.display = 'none';
+  // ==== 이메일 검증 (포커스아웃 시) ====
+  const emailError = document.getElementById('emailError'); // helper text 영역 (HTML에 추가 필요)
+
+  email.addEventListener('blur', async () => {
+    const value = email.value.trim();
+
+    // 1. 비어 있는 경우
+    if (!value) {
+      emailError.textContent = '*이메일을 입력해주세요.';
+      emailError.style.color = '#e53935';
+      emailError.style.display = 'block';
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('이미지 크기는 5MB 이하로 권장합니다.');
+    // 2. 이메일 형식 유효성 검사
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value) || value.length < 6) {
+      emailError.textContent = '*올바른 이메일 주소 형식을 입력해주세요. (예: example@example.com)';
+      emailError.style.color = '#e53935';
+      emailError.style.display = 'block';
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    previewImage.src = url;
-    imgInfo.textContent = `${file.name} · ${(file.size / 1024 | 0)} KB`;
-    imgPreview.style.display = 'flex';
+    // 3. 중복된 이메일인지 서버로 확인
+    try {
+      const resp = await fetch(`/api/v1/auth/check-email?email=${encodeURIComponent(value)}`);
+      const data = await resp.json();
+
+      if (resp.ok && data.available === false) {
+        emailError.textContent = '*중복된 이메일 입니다.';
+        emailError.style.color = '#e53935';
+        emailError.style.display = 'block';
+      } else {
+        emailError.style.display = 'none';
+      }
+    } catch (err) {
+      console.error('이메일 중복 확인 중 오류:', err);
+      emailError.textContent = '*이메일 확인 중 오류가 발생했습니다.';
+      emailError.style.color = '#e53935';
+      emailError.style.display = 'block';
+    }
   });
 
-  // ==== 이미지 제거 ====
-  removeImageBtn.addEventListener('click', () => {
+ // ==== 프로필 사진 업로드 / 삭제 ====
+ let uploaded = false;
+ const helper = document.getElementById('profileHelper'); // ← 추가된 helper 텍스트
+
+ preview.addEventListener('click', () => {
+   if (uploaded) {
+     const confirmDelete = confirm('등록한 프로필 사진을 삭제하시겠습니까?');
+     if (confirmDelete) {
+       preview.innerHTML = '<span class="plus-icon">+</span>';
+       preview.style.backgroundImage = '';
+       uploaded = false;
+       image.value = '';
+       if (helper) helper.style.visibility = 'visible'; // 다시 표시
+     }
+   } else {
+     image.click();
+   }
+ });
+
+image.addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (file.size > 5 * 1024 * 1024) {
+    alert('이미지 크기는 5MB 이하로 제한됩니다.');
     image.value = '';
-    imgPreview.style.display = 'none';
-    previewImage.src = '';
-  });
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    preview.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    preview.appendChild(img);
+    uploaded = true;
+    if (helper) helper.style.visibility = 'hidden'; // 업로드 시 숨김
+  };
+  reader.readAsDataURL(file);
+});
 
   // ==== 폼 제출 ====
+  const submitBtn = document.querySelector('.btn');
+  const submitMsg = document.getElementById('submitMsg');
+
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
 
@@ -111,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
       emailError.style.display = 'block';
       valid = false;
     }
-    if (password.value.length < 8) {
+    if (passwordEl.value.length < 8) {
       passwordError.style.display = 'block';
       valid = false;
     }
@@ -123,14 +212,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!valid) return;
 
     submitBtn.disabled = true;
-    submitMsg.style.display = 'block';
-    submitMsg.style.color = 'black';
-    submitMsg.textContent = '회원가입 요청 중입니다...';
+    if (submitMsg) {
+      submitMsg.style.display = 'block';
+      submitMsg.style.color = 'black';
+      submitMsg.textContent = '회원가입 요청 중입니다...';
+    }
 
     try {
       const fd = new FormData();
       fd.append('email', email.value.trim());
-      fd.append('password', password.value);
+      fd.append('password', passwordEl.value);
       fd.append('nickname', nickname.value.trim());
       if (image.files[0]) fd.append('image', image.files[0]);
 
@@ -157,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       submitMsg.style.color = '#dc2626';
-      submitMsg.textContent = '네트워크 오류가 발생했습니다. 콘솔을 확인하세요.';
+      submitMsg.textContent = '네트워크 오류가 발생했습니다.';
       console.error(err);
     } finally {
       submitBtn.disabled = false;
